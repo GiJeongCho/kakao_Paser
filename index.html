@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>카카오톡 메시지 정리</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --border: #e3e6ea;
+      --text: #1f2328;
+      --muted: #6b7280;
+      --accent: #fae100;
+      --accent-dark: #3c1e1e;
+      --btn: #2563eb;
+      --btn-hover: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 28px 20px 12px;
+      text-align: center;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 20px 40px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .card-head h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .btns { display: flex; gap: 8px; }
+    button {
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    button:hover { background: #f0f1f3; }
+    button.primary {
+      background: var(--btn);
+      border-color: var(--btn);
+      color: #fff;
+    }
+    button.primary:hover { background: var(--btn-hover); }
+    textarea, .output {
+      width: 100%;
+      flex: 1;
+      min-height: 420px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: "Consolas", "Menlo", "Malgun Gothic", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: vertical;
+      background: #fbfcfd;
+      color: var(--text);
+    }
+    textarea:focus { outline: 2px solid var(--btn); outline-offset: -1px; }
+    .output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      margin: 0;
+    }
+    .output:empty::before {
+      content: "변환 결과가 여기에 표시됩니다.";
+      color: var(--muted);
+    }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1f2328;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 760px) {
+      .grid { grid-template-columns: 1fr; }
+      textarea, .output { min-height: 260px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>카카오톡 메시지 정리</h1>
+    <p>대화를 붙여넣으면 시간 · 이모지 · 특수문자를 정리해 <code>[이름] 메시지</code> 형식으로 바꿔 줍니다.</p>
+  </header>
+
+  <div class="wrap">
+    <div class="grid">
+      <section class="card">
+        <div class="card-head">
+          <h2>입력</h2>
+          <div class="btns">
+            <button id="clearBtn">지우기</button>
+          </div>
+        </div>
+        <textarea id="input" placeholder="여기에 카카오톡 대화를 붙여넣으세요."></textarea>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>결과</h2>
+          <div class="btns">
+            <button id="copyBtn" class="primary">복사</button>
+          </div>
+        </div>
+        <pre id="output" class="output"></pre>
+      </section>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const copyBtn = document.getElementById('copyBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const toast = document.getElementById('toast');
+
+    // 메시지 시작 줄: [이름] [오후 2:39] 본문
+    const HEAD_RE = /^\s*\[([^\]]*)\]\s*\[[^\]]*\d{1,2}:\d{2}[^\]]*\]\s*(.*)$/;
+    // 구분선만 있는 줄
+    const SEP_RE = /^[=\-_*~\s]+$/;
+    // 삭제 안내 줄
+    const DELETED_RE = /^\s*메시지가 삭제되었습니다\.?\s*$/;
+
+    // 이름에서 첫 '/' 앞부분만 남기고 한글/영문/숫자 외 문자 제거
+    function cleanName(raw) {
+      const base = (raw || '').split('/')[0];
+      return base.replace(/[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ]/g, '').trim();
+    }
+
+    // 본문 내 @멘션 정리
+    function cleanMentions(text) {
+      return text.replace(/@(\S+)/g, (m, token) => {
+        const name = cleanName(token);
+        return name ? '@' + name : '';
+      });
+    }
+
+    function convert(raw) {
+      const lines = raw.split(/\r?\n/);
+      const messages = [];
+      let current = null;
+
+      for (const line of lines) {
+        const head = line.match(HEAD_RE);
+        if (head) {
+          const name = cleanName(head[1]);
+          const body = cleanMentions(head[2]).trim();
+          current = { name, lines: body ? [body] : [] };
+          messages.push(current);
+          continue;
+        }
+
+        if (DELETED_RE.test(line) || SEP_RE.test(line) || line.trim() === '') {
+          // 삭제 안내 / 구분선 / 빈 줄은 무시 (연속 줄로 붙이지 않음)
+          continue;
+        }
+
+        // 시작 줄이 아닌 일반 줄 → 직전 메시지의 연속 줄
+        if (current) {
+          current.lines.push(cleanMentions(line).trim());
+        }
+      }
+
+      // 같은 사람이 연속으로 말하면 하나로 묶기
+      const grouped = [];
+      for (const m of messages) {
+        const prev = grouped[grouped.length - 1];
+        if (prev && prev.name === m.name) {
+          prev.lines.push(...m.lines);
+        } else {
+          grouped.push({ name: m.name, lines: m.lines.slice() });
+        }
+      }
+
+      return grouped
+        .map(m => {
+          const text = m.lines.join('\n').trim();
+          const head = '[' + (m.name || '') + ']';
+          return text ? head + ' ' + text : head;
+        })
+        .join('\n');
+    }
+
+    function render() {
+      output.textContent = convert(input.value);
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+
+    input.addEventListener('input', render);
+
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      render();
+      input.focus();
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      const text = output.textContent;
+      if (!text) { showToast('복사할 내용이 없습니다.'); return; }
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('결과를 복사했습니다.');
+      } catch (e) {
+        const range = document.createRange();
+        range.selectNodeContents(output);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        try { document.execCommand('copy'); showToast('결과를 복사했습니다.'); }
+        catch (_) { showToast('복사에 실패했습니다.'); }
+        sel.removeAllRanges();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

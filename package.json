@@ -1,0 +1,33 @@
+{
+  "name": "kakao-parser",
+  "version": "1.0.0",
+  "description": "카카오톡 메시지 정리 데스크톱 앱",
+  "main": "main.js",
+  "author": "kakao_Parser",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.kakaoparser.app",
+    "productName": "KakaoParser",
+    "files": [
+      "main.js",
+      "index.html"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "카카오톡메시지정리.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.2"
+  }
+}
